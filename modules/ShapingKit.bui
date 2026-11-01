@@ -1,0 +1,161 @@
+''' User-space rectangles relative to the layout origin at the first baseline.
+Sequential Structure TextMetrics
+    InkX As Double
+    InkY As Double
+    InkWidth As Double
+    InkHeight As Double
+    LogicalX As Double
+    LogicalY As Double
+    LogicalWidth As Double
+    LogicalHeight As Double
+    Baseline As Double
+    UnknownGlyphs As Integer
+End Structure
+
+''' Explicit styles, independent of Graphics' mutable font properties.
+Public Class TextStyle
+    Public Property Family As String = "sans-serif"
+    Public Property Size As Double = 12.0
+    Public Property Bold As Boolean = False
+    Public Property Italic As Boolean = False
+    Public Property Underline As Boolean = False
+End Class
+
+Public Class ShapingException Inherits Exception
+    Public Sub Constructor(message As String, code As Integer)
+        Super.Constructor(message, code)
+    End Sub
+End Class
+
+#If TargetLinux Then
+Private Declare Function N_adapter_supported Lib "buoy_shapingkit" Alias "bsk_buoy0720_adapter_supported" () As Integer
+Private Declare Function N_measure_raster Lib "buoy_shapingkit" Alias "bsk_measure_raster" (text As String, family As String, size As Double, styleBits As Integer, ByRef metrics As TextMetrics) As Integer
+Private Declare Function N_raster Lib "buoy_shapingkit" Alias "bsk_raster" (text As String, family As String, size As Double, styleBits As Integer, width As Integer, height As Integer, x As Double, y As Double, red As Double, green As Double, blue As Double, alpha As Double, rgba As Ptr, capacity As Integer) As Integer
+Private Declare Function N_buoy0720_context Lib "buoy_shapingkit" Alias "bsk_buoy0720_context" (graphicsHandle As Ptr) As Ptr
+Private Declare Function N_layout Lib "buoy_shapingkit" Alias "bsk_layout" (context As Ptr, text As String, family As String, size As Double, styleBits As Integer, draw As Integer, x As Double, y As Double, red As Double, green As Double, blue As Double, alpha As Double, ByRef metrics As TextMetrics) As Integer
+#End If
+
+Private Sub ValidateText(value As String)
+    Dim encoded As Bytes = Bytes.FromString(value, Text.Encodings.UTF8)
+    For i As Integer = 0 To encoded.Count - 1
+        If encoded.Item(i) = 0 Then Throw New InvalidArgumentException("Embedded NUL in shaping text or family")
+    Next
+End Sub
+
+Private Function Layout(context As Ptr, text As String, style As TextStyle, draw As Integer, x As Double, y As Double, red As Double, green As Double, blue As Double, alpha As Double) As TextMetrics
+    #If TargetLinux Then
+        If context = Nil Then Throw New InvalidArgumentException("A live Linux Graphics.NativeHandle is required")
+        If style = Nil Then Throw New InvalidArgumentException("TextStyle is required")
+        ValidateText(text)
+        ValidateText(style.Family)
+        Dim styleBits As Integer = 0
+        If style.Bold Then styleBits += 1
+        If style.Italic Then styleBits += 2
+        If style.Underline Then styleBits += 4
+        Dim metrics As TextMetrics
+        Dim status As Integer = N_layout(context, text, style.Family, style.Size, styleBits, draw, x, y, red, green, blue, alpha, metrics)
+        If status = 1 Then Throw New InvalidArgumentException("Invalid shaping argument: check size, UTF-8, length, coordinates and RGBA")
+        If status <> 0 Then Throw New ShapingException("Pango/Cairo context or rendering failure", status)
+        Return metrics
+    #Else
+        Throw New ShapingException("ShapingKit requires Linux Pango/Cairo; this platform is unsupported", 4)
+    #End If
+End Function
+
+Public Function IsSupported() As Boolean
+    #If TargetLinux Then
+        Return True
+    #Else
+        Return False
+    #End If
+End Function
+
+''' True only when the loaded runtime matches the tested private adapter ABI.
+''' Does not validate a particular Graphics or its owner lifetime.
+Public Function Graphics0720AdapterSupported() As Boolean
+    #If TargetLinux Then
+        Return N_adapter_supported() <> 0
+    #Else
+        Return False
+    #End If
+End Function
+
+''' Measure in raster pixels using the same image-surface configuration as Rasterize.
+''' No private Graphics ABI or native context is required.
+Public Function MeasureRaster(text As String, style As TextStyle) As TextMetrics
+    #If TargetLinux Then
+        If style = Nil Then Throw New InvalidArgumentException("TextStyle is required")
+        ValidateText(text)
+        ValidateText(style.Family)
+        Dim bits As Integer = 0
+        If style.Bold Then bits += 1
+        If style.Italic Then bits += 2
+        If style.Underline Then bits += 4
+        Dim metrics As TextMetrics
+        Dim status As Integer = N_measure_raster(text, style.Family, style.Size, bits, metrics)
+        If status = 1 Then Throw New InvalidArgumentException("Invalid raster text/style")
+        If status <> 0 Then Throw New ShapingException("Pango/Cairo raster measurement failure", status)
+        Return metrics
+    #Else
+        Throw New ShapingException("ShapingKit raster measurement requires Linux Pango/Cairo", 4)
+    #End If
+End Function
+
+''' Rasterize through public Picture.FromBuffer, without private runtime access.
+''' Size and placement are raster pixels. The returned image has scale 1.
+Public Function Rasterize(text As String, style As TextStyle, width As Integer, height As Integer, x As Double, baselineY As Double, red As Double, green As Double, blue As Double, alpha As Double = 1.0) As Picture
+    #If TargetLinux Then
+        If style = Nil Then Throw New InvalidArgumentException("TextStyle is required")
+        If width <= 0 Or height <= 0 Or width > 16384 Or height > 16384 Then Throw New InvalidArgumentException("Raster dimensions must be in 1..16384")
+        If width * height > 16777216 Then Throw New InvalidArgumentException("Raster exceeds 64 MiB")
+        ValidateText(text)
+        ValidateText(style.Family)
+        Dim bits As Integer = 0
+        If style.Bold Then bits += 1
+        If style.Italic Then bits += 2
+        If style.Underline Then bits += 4
+        Dim byteCount As Integer = width * height * 4
+        Dim buffer As New Bytes(byteCount)
+        Dim status As Integer = N_raster(text, style.Family, style.Size, bits, width, height, x, baselineY, red, green, blue, alpha, buffer.DataPtr(), byteCount)
+        If status = 1 Then Throw New InvalidArgumentException("Invalid raster text/style/geometry/color")
+        If status <> 0 Then Throw New ShapingException("Pango/Cairo raster failure", status)
+        Dim image As Picture = Picture.FromBuffer(buffer.DataPtr(), byteCount, 0, width, height)
+        If image = Nil Then Throw New ShapingException("Picture.FromBuffer rejected raster", 3)
+        Return image
+    #Else
+        Throw New ShapingException("ShapingKit rasterization requires Linux Pango/Cairo", 4)
+    #End If
+End Function
+
+''' Measures with the current Cairo transform/surface. Does not retain context.
+Public Function Measure(context As Ptr, text As String, style As TextStyle) As TextMetrics
+    Return Layout(context, text, style, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)
+End Function
+
+''' Draw at the first baseline, inheriting transform/clip/operator. RGBA is 0..1.
+''' Returns metrics from the very layout drawn; does not retain context.
+Public Function Draw(context As Ptr, text As String, x As Double, baselineY As Double, style As TextStyle, red As Double, green As Double, blue As Double, alpha As Double = 1.0) As TextMetrics
+    Return Layout(context, text, style, 1, x, baselineY, red, green, blue, alpha)
+End Function
+
+Private Function Context0720(graphics As Graphics) As Ptr
+    #If TargetLinux Then
+        If graphics = Nil Then Throw New InvalidArgumentException("Graphics is required")
+        If graphics.NativeHandle = Nil Then Throw New InvalidArgumentException("Graphics has no live native handle")
+        Dim context As Ptr = N_buoy0720_context(graphics.NativeHandle)
+        If context = Nil Then Throw New ShapingException("Unsupported Buoy 0.72.0 runtime fingerprint or invalid context", 4)
+        Return context
+    #Else
+        Throw New ShapingException("ShapingKit requires Linux Pango/Cairo", 4)
+    #End If
+End Function
+
+''' Compatibility adapter for the verified Linux x86_64 0.72.0 runtime only.
+''' Reacquires Graphics.NativeHandle each call; never caches its private wrapper.
+Public Function MeasureGraphics0720(graphics As Graphics, text As String, style As TextStyle) As TextMetrics
+    Return Measure(Context0720(graphics), text, style)
+End Function
+
+Public Function DrawGraphics0720(graphics As Graphics, text As String, x As Double, baselineY As Double, style As TextStyle, red As Double, green As Double, blue As Double, alpha As Double = 1.0) As TextMetrics
+    Return Draw(Context0720(graphics), text, x, baselineY, style, red, green, blue, alpha)
+End Function

@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "name": "shapingkit",
+  "version": "0.1.0",
+  "description": "Opt-in Linux Pango/Cairo shaped measurement, public Picture rasterization and guarded direct Graphics drawing",
+  "libraries": [
+    {
+      "libName": "buoy_shapingkit",
+      "system": false,
+      "minVersion": "0.1.0"
+    }
+  ]
+}
