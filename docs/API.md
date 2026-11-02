@@ -50,9 +50,7 @@ Install `packages/shapingkit-0.1.0.buipkg` in the application's `packages/`
 directory. Import `shapingkit.ShapingKit` (an alias such as `Shaping` qualifies
 module functions; `TextStyle` and `TextMetrics` are unqualified types).
 
-The complete compiler-checked example is
-`tests/shapingkit_smoke.bui`. The build test
-also checks/runs that example with its import changed to the sealed package.
+Construct `TextStyle`, then choose raster operations or a supported live-context adapter according to the target surface.
 
 | API | Meaning |
 | --- | --- |
@@ -124,33 +122,23 @@ API, outside this focused helper.
 ## Build and verification
 
 On Linux install a C compiler, `pkg-config`, and Pango/Cairo development headers
-(for example `libpango1.0-dev` and `libcairo2-dev`). Build with
-`python3 tools/build_shapingkit.py`; run tests with
-`python3 tools/build_shapingkit.py --test`. `--check-only` runs just the compiler
-checks. All diagnostics JSON `errors` arrays are read even on exit 0.
+(for example `libpango1.0-dev` and `libcairo2-dev`). The [devtools builder](https://github.com/BuoyBay/devtools/blob/main/tools/build_shapingkit.py)
+compiles and stages the native bridge. Read all compiler diagnostics, including
+the JSON `errors` array even when the process exits zero.
 
-Sealing stages only Linux slices with matching native-source receipts and a verified
-64-bit ELF architecture. Stale slices are omitted; an architecture mismatch or
-no current slice fails sealing. Packaging tests exercise these failure paths.
-The adapter regression exports the expected symbol from a different binary and
-checks rejection before touching an intentionally invalid pointer. The Buoy
-consumer tests the public raster route, pixel channels/partial alpha, and normal
-Picture compositing as well as the exact-runtime adapter.
+Sealing requires current native-source receipts and the correct ELF architecture.
+Rebuild native slices before sealing after changing the bridge sources.
 
-An isolated Docker toolchain now supplies ARM64 GCC/Pango/Fontconfig and
-userspace QEMU without host package or binfmt changes. The native tests, actual
-package DSO, and Buoy public MeasureRaster/Rasterize/Picture composition passed
-under emulation. A real cross-built JPEG8 library supports the image runtime;
-no ABI symlink is used. See `tests/font_arm_evidence/README.md`. Hardware-native
-ARM execution and ARM private-adapter compatibility remain unverified.
+Linux ARM64 public raster APIs have executed under QEMU with cross-built
+Pango/Fontconfig and a matching JPEG8 library. Physical ARM64 execution and the
+ARM64 private Graphics adapter remain unverified.
 
-The native runtime depends on the system Pango/Cairo/GLib libraries; these are not
-vendored. Buoy's installed Picture runtime additionally needs its own JPEG ABI.
-This Debian host lacks Ubuntu's `libjpeg.so.8`; the integration test was run with
-`LD_LIBRARY_PATH=/tmp/buoy-chatui-jpeg8/build`, an existing real JPEG8 build. No
-system files or toolchain were modified and no incompatible JPEG symlink was used.
+The native runtime depends on system Pango/Cairo/GLib libraries. Buoy's Picture
+runtime also requires its matching JPEG ABI. If loading fails for
+`libjpeg.so.8`, provide a compatible JPEG8 library or use a toolchain environment
+that supplies it; an incompatible SONAME symlink is unsafe.
 
-See [evidence and upstream specification](../resources/buoy-docs/shapingkit.md).
+See [Graphics compatibility and raster integration](../resources/buoy-docs/shapingkit.md).
 
 ## Primary references
 
@@ -164,4 +152,6 @@ See [evidence and upstream specification](../resources/buoy-docs/shapingkit.md).
 
 - [Cairo image-surface pixel format and ownership](https://www.cairographics.org/manual/cairo-Image-Surfaces.html)
 
-Test suites and fixtures are maintainer-local and are not part of this public repository.
+Builder context: run shared `tools/` commands from the assembled
+[BuoyBay workspace](https://github.com/BuoyBay/workspace-tools). The scripts live
+in [devtools](https://github.com/BuoyBay/devtools), alongside the shared build inputs.

@@ -3,64 +3,18 @@ summary: "Usage and API contracts for shapingkit."
 related: ["index.md", "getting-started.md", "api.md", "typed-api.md"]
 ---
 
-# Linux Graphics text evidence and upstream patch specification
+# Linux shaped-text integration
 
-## Verified environment and artifacts
+## Runtime compatibility
 
-Buoy 0.72.0, Linux x86_64, PangoCairo 1.56.3 and Cairo 1.18.4. Exact runtime
-fingerprints and host details are recorded in `tests/shapingkit_evidence/environment.json`.
-The build script regenerates the environment, native diagnostics, Buoy comparison
-output, disassembly and `comparison.png` under `tests/shapingkit_evidence/`.
-The PNG's left column is built-in `Graphics.DrawString`; right is the opt-in helper.
-Rows: Arabic, Indic, combining acute, stacked combining marks, mixed bidi, CJK
-fallback and trailing space. Both columns use DejaVu Sans at size 32 and the same
-baseline. These are actual offscreen Picture.Graphics calls, not simulated built-ins.
+This package uses PangoCairo for shaped text. Font fallback and glyph coverage
+depend on installed fonts. Native runtime coverage is Linux x86_64; checks for
+other targets do not establish a native backend there.
 
-The native tests inspect glyph count, missing glyphs, Pango run direction levels
-and font changes. They also assert Arabic lam-alef shaping, combining composed/
-decomposed metric equivalence, all eight style combinations, unknown-glyph reporting,
-empty/multiline text, size effects, argument rejection, Cairo error-object rejection,
-exact Draw/Measure metric equality, actual pixel bounds around the baseline,
-translation/scale with partial clipping, rotation/scale state preservation,
-source/path/current point preservation and fully clipped draws. Private-adapter
-rejection is tested without the recognized runtime loaded; the Buoy test exercises
-the adapter success path. Pixel assertions validate geometry/state, not linguistic
-correctness. The PNG was visually inspected: joined Arabic, Devanagari output,
-reordered Hebrew runs and CJK fallback are visible on the helper side. This is
-not a full script conformance, accessibility or line-breaking suite.
-
-Observed diagnostics with the installed fonts:
-
-- Arabic `سلام`: Cairo toy API emits four glyphs; Pango emits three and an odd bidi
-  level run. Built-in ink width 87; helper logical width 66; no helper missing glyphs.
-- Indic `नमस्ते`: toy API emits six missing glyphs; Pango emits five glyphs with
-  zero unknowns. Built-in width 112; helper logical width 68.
-- Combining `é`: toy API emits two glyphs; Pango emits one. Composed/decomposed
-  Pango ink width and logical width agree. This particular acute sample looks
-  similar in both columns; glyph-count differences alone do not prove a visual defect.
-- Mixed `abc אבג 123`: Pango reports an odd bidi run and reorders output. Built-in
-  draws in its input glyph order. Width alone cannot diagnose bidi correctness.
-- `A漢B`: toy API emits one missing glyph; Pango switches fonts across runs and
-  reports zero unknowns. Built-in width 61; helper logical width 76.
-- `A `: built-in width 22 is ink width, excluding the trailing space; Cairo advance
-  and Pango logical width are 32. This is a metric-definition difference, not proof
-  that built-in ink measurement disagrees with its own toy glyph drawing.
-
-Ink and logical dimensions are deliberately labelled separately. Comparing them
-does not imply a one-to-one measurement contract. All six desktop target compiler
-checks pass; **native runtime verification covers Linux x86_64 only**. Unsupported
-macOS/Windows runtime exceptions were compiler-checked, not executed natively.
-
-## Runtime-source availability and direct binary evidence
-
-No upstream Buoy compiler or Graphics runtime sources were found in this repository
-or the installed `/usr/share/buoy` and `/usr/lib/buoy` resources. The checkout has
-third-party package bridge sources. The installation provides compiled runtime
-libraries, stubs, docs and CRT objects. This finding is scoped to the authorized
-checkout and toolchain install; no claim is made about other machines or repositories.
+## Graphics handle compatibility
 
 `objdump -d --disassemble=<symbol> /usr/lib/buoy/runtime/x86_64-unknown-linux-gnu/buoy_ui.so`
-confirms the following exported functions (full output is saved in evidence):
+shows the following exported behavior:
 
 - `bui_ui_graphics_draw_string_styled`: calls `cairo_select_font_face`,
   `cairo_set_font_size`, `cairo_move_to`, `cairo_show_text`. Underline uses
@@ -71,8 +25,7 @@ confirms the following exported functions (full output is saved in evidence):
   `cairo_create` result at offset zero, Picture at offset 8, surface at offset 16,
   then width/height doubles. GDB at the helper entry confirms `NativeHandle`
   supplies the wrapper, not its first pointer's value. Direct use as `cairo_t*`
-  crashed inside `cairo_get_target`. The private adapter is tied to this evidence
-  and exact runtime SHA, rather than auto-detecting unknown pointer layouts.
+  crashed inside `cairo_get_target`. The private adapter is restricted to the exact supported runtime SHA, rather than auto-detecting unknown pointer layouts.
 
 The runtime also imports GTK label functions and Pango calls used elsewhere.
 Presence of those imports does not establish Pango use by Graphics. Native control
@@ -116,8 +69,7 @@ text has a separate GTK path and is not changed or diagnosed by this helper.
    controls as part of the Graphics fix.
 
 The binary symbol locations above are concrete patch entry points, not source
-filenames: upstream source is required to implement these fixes. No toolchain files
-or files outside this task's owned paths were changed.
+filenames: upstream source is required to implement these fixes.
 
 ## Primary sources
 
@@ -138,9 +90,9 @@ straight RGBA conversion, and `Picture.FromBuffer`. Its result can be composited
 with `Graphics.DrawPicture` without dereferencing Graphics.NativeHandle. It
 does not fix the public NativeHandle discrepancy or replace built-in text.
 `Graphics0720AdapterSupported` separately exposes the exact-runtime capability.
-Mismatch tests export the same symbol from an unapproved executable and pass
-an invalid pointer; the guard rejects before dereference. Package staging now
-rejects stale receipts, incorrect ELF architecture and empty native slices.
+The adapter rejects unapproved runtime binaries before dereferencing Graphics
+handles. Package staging rejects stale receipts, incorrect ELF architecture and
+empty native slices.
 See the package README for raster dimensions, alpha, scaling and temporary
 memory bounds.
 
