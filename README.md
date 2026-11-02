@@ -1,4 +1,4 @@
-# Measure and render shaped text with Linux Pango and Cairo
+# Pango/Cairo shaped text on Linux
 
 Opt-in Linux Pango/Cairo text drawing and measurement. This package does not
 change built-in `Graphics.DrawString` or native GTK control text. It is independent
