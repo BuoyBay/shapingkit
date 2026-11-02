@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "shapingkit",
   "version": "0.1.0",
-  "description": "Pango/Cairo shaped text on Linux",
+  "description": "Pango/Cairo text on Linux",
   "libraries": [
     {
       "libName": "buoy_shapingkit",
